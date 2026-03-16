@@ -17,7 +17,7 @@ Route::get('/articles/user/{user}', [ArticleController::class, 'byUser'])->name(
 
 /*
  * CHALLENGE 1 - MITIGAZIONE: Rate Limiter mancante
- * 
+ *
  * PROBLEMA: La rotta /articles/search era pubblica e senza alcuna protezione.
  * Uno script bash poteva inviare migliaia di richieste consecutive causando
  * un rallentamento o blocco completo del server (attacco DoS).
@@ -53,9 +53,43 @@ Route::middleware('revisor')->group(function(){
 // Admin routes
 Route::middleware(['admin','admin.local'])->group(function(){
     Route::get('/admin/dashboard', [AdminController::class, 'dashboard'])->name('admin.dashboard');
-    Route::get('/admin/{user}/set-admin', [AdminController::class, 'setAdmin'])->name('admin.setAdmin');
-    Route::get('/admin/{user}/set-revisor', [AdminController::class, 'setRevisor'])->name('admin.setRevisor');
-    Route::get('/admin/{user}/set-writer', [AdminController::class, 'setWriter'])->name('admin.setWriter');
+
+    /*
+     * CHALLENGE 2 - MITIGAZIONE: Operazioni critiche in GET (CSRF)
+     *
+     * PROBLEMA: Le rotte set-admin, set-revisor e set-writer erano definite
+     * con il metodo GET. Questo e' molto pericoloso perche':
+     * 1. Le richieste GET non sono protette dal token CSRF di Laravel
+     * 2. Un hacker puo' creare una pagina HTML trappola (es. pagina degli orsi)
+     *    che contiene un link nascosto a queste rotte
+     * 3. Se un admin visita quella pagina mentre e' loggato, il browser
+     *    esegue automaticamente la richiesta GET con i suoi cookie di sessione
+     * 4. Il risultato e' una VERTICAL PRIVILEGE ESCALATION: un utente normale
+     *    viene promosso ad amministratore senza che l'admin se ne accorga!
+     *
+     * COME AVVENIVA L'ATTACCO:
+     * - La pagina trappola (index.html) mostrava contenuto innocuo (orsetti)
+     * - Dopo 5 secondi eseguiva automaticamente: GET /admin/1/set-admin
+     * - Poiche' l'admin era loggato, il browser mandava i cookie di sessione
+     * - Laravel eseguiva l'azione pensando fosse una richiesta legittima
+     * - L'utente con ID 1 diventava amministratore!
+     *
+     * SOLUZIONE: Cambiare il metodo HTTP da GET a PATCH.
+     * PATCH non e' eseguibile tramite semplici link o tag <img>,
+     * richiede una richiesta esplicita con il token CSRF di Laravel.
+     * Cosi' anche se un hacker crea una pagina trappola, non puo'
+     * piu' sfruttare la sessione dell'admin per eseguire queste azioni.
+     *
+     * PRIMA:  Route::get('/admin/{user}/set-admin', ...)
+     * DOPO:   Route::patch('/admin/{user}/set-admin', ...)
+     *
+     * NOTA: Bisogna anche aggiornare la vista admin per usare un form
+     * con method PATCH invece dei semplici link <a href="...">.
+     */
+    Route::patch('/admin/{user}/set-admin', [AdminController::class, 'setAdmin'])->name('admin.setAdmin');
+    Route::patch('/admin/{user}/set-revisor', [AdminController::class, 'setRevisor'])->name('admin.setRevisor');
+    Route::patch('/admin/{user}/set-writer', [AdminController::class, 'setWriter'])->name('admin.setWriter');
+
     Route::put('/admin/edit/tag/{tag}', [AdminController::class, 'editTag'])->name('admin.editTag');
     Route::delete('/admin/delete/tag/{tag}', [AdminController::class, 'deleteTag'])->name('admin.deleteTag');
     Route::put('/admin/edit/category/{category}', [AdminController::class, 'editCategory'])->name('admin.editCategory');
