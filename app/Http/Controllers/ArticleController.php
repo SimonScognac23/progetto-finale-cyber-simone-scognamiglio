@@ -22,26 +22,18 @@ class ArticleController extends Controller implements HasMiddleware
             new Middleware('auth', except: ['index', 'show', 'byCategory', 'byUser', 'articleSearch']),
         ];
     }
-    /**
-     * Display a listing of the resource.
-     */
+
     public function index()
     {
         $articles = Article::where('is_accepted', true)->orderBy('created_at', 'desc')->get();
         return view('articles.index', compact('articles'));
     }
 
-    /**
-     * Show the form for creating a new resource.
-     */
     public function create()
     {
         return view('articles.create');
     }
 
-    /**
-     * Store a newly created resource in storage.
-     */
     public function store(Request $request)
     {
         $request->validate([
@@ -62,13 +54,32 @@ class ArticleController extends Controller implements HasMiddleware
             'user_id' => Auth::user()->id,
             'slug' => Str::slug($request->title),
         ]);
-        
-        $tags = explode(',', $request->tags);
 
+        /*
+         * CHALLENGE 3 - MITIGAZIONE: Log mancanti per operazioni critiche
+         *
+         * PROBLEMA: Senza log non si sapeva chi aveva creato, modificato
+         * o eliminato un articolo. In caso di contenuto malevolo pubblicato
+         * non si poteva risalire al responsabile.
+         *
+         * SOLUZIONE: Log::info() registra ogni operazione critica con:
+         * - Chi l'ha eseguita (user_id e nome)
+         * - Su quale risorsa (article_id e titolo)
+         * - Quando (timestamp automatico di Laravel)
+         * I log vengono salvati in storage/logs/laravel.log
+         */
+        Log::info('ARTICOLO - Creazione', [
+            'user_id' => Auth::user()->id,
+            'user_name' => Auth::user()->name,
+            'article_id' => $article->id,
+            'article_title' => $article->title,
+            'action' => 'create',
+        ]);
+
+        $tags = explode(',', $request->tags);
         foreach($tags as $i => $tag){
             $tags[$i] = trim($tag);
         }
-
         foreach($tags as $tag){
             $newTag = Tag::updateOrCreate([
                 'name' => strtolower($tag)
@@ -79,17 +90,11 @@ class ArticleController extends Controller implements HasMiddleware
         return redirect(route('homepage'))->with('message', 'Articolo creato con successo');
     }
 
-    /**
-     * Display the specified resource.
-     */
     public function show(Article $article)
     {
         return view('articles.show', compact('article'));
     }
 
-    /**
-     * Show the form for editing the specified resource.
-     */
     public function edit(Article $article)
     {
         if(Auth::user()->id != $article->user_id){
@@ -98,9 +103,6 @@ class ArticleController extends Controller implements HasMiddleware
         return view('articles.edit', compact('article'));
     }
 
-    /**
-     * Update the specified resource in storage.
-     */
     public function update(Request $request, Article $article)
     {
         $request->validate([
@@ -126,15 +128,12 @@ class ArticleController extends Controller implements HasMiddleware
                 'image' => $request->file('image')->store('public/images')
             ]);
         }
-        
-        $tags = explode(',', $request->tags);
 
+        $tags = explode(',', $request->tags);
         foreach($tags as $i => $tag){
             $tags[$i] = trim($tag);
         }
-
         $newTags = [];
-
         foreach($tags as $tag){
             $newTag = Tag::updateOrCreate([
                 'name' => strtolower($tag)
@@ -143,19 +142,34 @@ class ArticleController extends Controller implements HasMiddleware
         }
         $article->tags()->sync($newTags);
 
+        // CHALLENGE 3 - Log modifica articolo
+        Log::info('ARTICOLO - Modifica', [
+            'user_id' => Auth::user()->id,
+            'user_name' => Auth::user()->name,
+            'article_id' => $article->id,
+            'article_title' => $article->title,
+            'action' => 'update',
+        ]);
+
         return redirect(route('writer.dashboard'))->with('message', 'Articolo modificato con successo');
     }
 
-    /**
-     * Remove the specified resource from storage.
-     */
     public function destroy(Article $article)
     {
+        // CHALLENGE 3 - Log eliminazione articolo
+        Log::info('ARTICOLO - Eliminazione', [
+            'user_id' => Auth::user()->id,
+            'user_name' => Auth::user()->name,
+            'article_id' => $article->id,
+            'article_title' => $article->title,
+            'action' => 'delete',
+        ]);
+
         foreach ($article->tags as $tag) {
             $article->tags()->detach($tag);
         }
         $article->delete();
-        
+
         return redirect()->back()->with('message', 'Articolo cancellato con successo');
     }
 
@@ -163,7 +177,7 @@ class ArticleController extends Controller implements HasMiddleware
         $articles = $category->articles()->where('is_accepted', true)->orderBy('created_at', 'desc')->get();
         return view('articles.by-category', compact('category', 'articles'));
     }
-    
+
     public function byUser(User $user){
         $articles = $user->articles()->where('is_accepted', true)->orderBy('created_at', 'desc')->get();
         return view('articles.by-user', compact('user', 'articles'));

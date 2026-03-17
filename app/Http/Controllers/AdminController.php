@@ -18,45 +18,55 @@ class AdminController extends Controller
     public function __construct(HttpService $httpService)
     {
         $this->httpService = $httpService;
-    } 
+    }
 
     public function dashboard(){
         $adminRequests = User::where('is_admin', NULL)->get();
         $revisorRequests = User::where('is_revisor', NULL)->get();
         $writerRequests = User::where('is_writer', NULL)->get();
 
-        //$financialData = json_decode($this->httpService->getRequest('http://localhost:8001/financialApp/user-data.php'));
-        
         try {
-            // Effettua la richiesta HTTP
             $response = $this->httpService->getRequest('http://internal.finance:8001/user-data.php');
-            // Controlla se la risposta è vuota o non valida
             if (empty($response)) {
                 throw new Exception('La risposta dalla richiesta HTTP è vuota.');
             }
-           
-            // Decodifica il JSON
             $financialData = json_decode($response, true);
-
-            // Controlla se ci sono errori nella decodifica del JSON
             if (json_last_error() !== JSON_ERROR_NONE) {
                 throw new Exception('Errore nella decodifica del JSON: ' . json_last_error_msg());
             }
-        
-            // A questo punto, $financialData è un array associativo con i dati finanziari
-            // Puoi procedere con l'elaborazione dei dati
         } catch (Exception $e) {
-            // Gestisci l'eccezione
             echo 'Errore: ' . $e->getMessage();
-            // Puoi anche registrare l'errore in un log file o eseguire altre azioni di recupero
         }
-        
+
         return view('admin.dashboard', compact('adminRequests', 'revisorRequests', 'writerRequests','financialData'));
     }
 
     public function setAdmin(User $user){
         $user->is_admin = true;
         $user->save();
+
+        /*
+         * CHALLENGE 3 - MITIGAZIONE: Log mancanti per operazioni critiche
+         *
+         * PROBLEMA: Senza log non si puo' risalire a chi ha eseguito
+         * operazioni critiche come il cambio di ruolo degli utenti.
+         * Questo viola i principi di accountability e non-repudiation.
+         *
+         * SOLUZIONE: Aggiunto Log::info() per registrare:
+         * - Chi ha eseguito l'azione (admin loggato)
+         * - Su chi e' stata eseguita (utente target)
+         * - Quando e' stata eseguita (timestamp automatico di Laravel)
+         * - Che azione e' stata eseguita (setAdmin)
+         *
+         * I log vengono salvati in storage/logs/laravel.log
+         */
+        Log::info('CAMBIO RUOLO - setAdmin', [
+            'admin_id' => Auth::user()->id,
+            'admin_name' => Auth::user()->name,
+            'target_user_id' => $user->id,
+            'target_user_name' => $user->name,
+            'action' => 'set_admin',
+        ]);
 
         return redirect(route('admin.dashboard'))->with('message', "$user->name is now administrator");
     }
@@ -65,12 +75,30 @@ class AdminController extends Controller
         $user->is_revisor = true;
         $user->save();
 
+        // CHALLENGE 3 - Log cambio ruolo revisor
+        Log::info('CAMBIO RUOLO - setRevisor', [
+            'admin_id' => Auth::user()->id,
+            'admin_name' => Auth::user()->name,
+            'target_user_id' => $user->id,
+            'target_user_name' => $user->name,
+            'action' => 'set_revisor',
+        ]);
+
         return redirect(route('admin.dashboard'))->with('message', "$user->name is now revisor");
     }
 
     public function setWriter(User $user){
         $user->is_writer = true;
         $user->save();
+
+        // CHALLENGE 3 - Log cambio ruolo writer
+        Log::info('CAMBIO RUOLO - setWriter', [
+            'admin_id' => Auth::user()->id,
+            'admin_name' => Auth::user()->name,
+            'target_user_id' => $user->id,
+            'target_user_name' => $user->name,
+            'action' => 'set_writer',
+        ]);
 
         return redirect(route('admin.dashboard'))->with('message', "$user->name is now writer");
     }
@@ -90,7 +118,6 @@ class AdminController extends Controller
             $article->tags()->detach($tag);
         }
         $tag->delete();
-
         return redirect()->back()->with('message', 'Tag successfully deleted');
     }
 
@@ -101,13 +128,11 @@ class AdminController extends Controller
         $category->update([
             'name' => strtolower($request->name),
         ]);
-
         return redirect()->back()->with('message', 'Category successfully updated');
     }
 
     public function deleteCategory(Category $category){
         $category->delete();
-
         return redirect()->back()->with('message', 'Category successfully deleted');
     }
 
@@ -115,7 +140,6 @@ class AdminController extends Controller
         $category = Category::create([
             'name' => strtolower($request->name),
         ]);
-        
         return redirect()->back()->with('message', 'Category successfully created');
     }
 
@@ -123,7 +147,6 @@ class AdminController extends Controller
         $tag = Tag::create([
             'name' => strtolower($request->name),
         ]);
-        
         return redirect()->back()->with('message', 'Tag successfully created');
     }
 }
