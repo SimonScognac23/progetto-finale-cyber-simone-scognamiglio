@@ -45,10 +45,42 @@ class ArticleController extends Controller implements HasMiddleware
             'tags' => 'required'
         ]);
 
+        /*
+         * CHALLENGE 5 - MITIGAZIONE: Validazione contenuto articolo non presente
+         *
+         * PROBLEMA: Il body dell'articolo veniva salvato nel database
+         * esattamente come arrivava dalla richiesta HTTP, senza alcuna
+         * sanitizzazione. Usando BurpSuite come proxy, un hacker poteva
+         * intercettare la richiesta POST e modificare il campo body
+         * inserendo uno script malevolo come:
+         * <script>alert('XSS hacked!')</script>
+         *
+         * Questo script veniva salvato nel database e poi eseguito
+         * ogni volta che un utente visualizzava l'articolo infettato.
+         * Questo si chiama STORED XSS (Cross-Site Scripting) ed e' il
+         * tipo piu' pericoloso perche' colpisce TUTTI gli utenti che
+         * leggono quell'articolo, non solo uno.
+         *
+         * Con uno script piu' complesso l'hacker poteva rubare i cookie
+         * di sessione degli utenti e impersonarli sul sito!
+         *
+         * SOLUZIONE: Sanitizzazione del body con strip_tags()
+         * La funzione strip_tags() rimuove tutti i tag HTML non presenti
+         * nella whitelist. I tag nella whitelist sono quelli necessari
+         * per la formattazione normale di un articolo (grassetto, corsivo,
+         * titoli, liste, link, immagini). I tag pericolosi come
+         * <script>, <iframe>, <object> vengono rimossi automaticamente.
+         *
+         * PRIMA: 'body' => $request->body  (pericoloso!)
+         * DOPO:  'body' => strip_tags($request->body, $allowedTags)
+         */
+        $allowedTags = '<p><b><i><u><h1><h2><h3><ul><ol><li><a><img><strong><em><br>';
+        $sanitizedBody = strip_tags($request->body, $allowedTags);
+
         $article = Article::create([
             'title' => $request->title,
             'subtitle' => $request->subtitle,
-            'body' => $request->body,
+            'body' => $sanitizedBody,
             'image' => $request->file('image')->store('public/images'),
             'category_id' => $request->category,
             'user_id' => Auth::user()->id,
@@ -114,10 +146,18 @@ class ArticleController extends Controller implements HasMiddleware
             'tags' => 'required'
         ]);
 
+        /*
+         * CHALLENGE 5 - MITIGAZIONE: Sanitizzazione anche in fase di modifica
+         * Stesso fix applicato al metodo update() per proteggere
+         * anche la modifica degli articoli esistenti.
+         */
+        $allowedTags = '<p><b><i><u><h1><h2><h3><ul><ol><li><a><img><strong><em><br>';
+        $sanitizedBody = strip_tags($request->body, $allowedTags);
+
         $article->update([
             'title' => $request->title,
             'subtitle' => $request->subtitle,
-            'body' => $request->body,
+            'body' => $sanitizedBody,
             'category_id' => $request->category,
             'slug' => Str::slug($request->title),
         ]);
