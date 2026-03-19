@@ -32,6 +32,18 @@ Route::get('/articles/user/{user}', [ArticleController::class, 'byUser'])->name(
  */
 Route::get('/articles/search', [ArticleController::class, 'articleSearch'])->middleware('throttle:10,1')->name('articles.search');
 
+/*
+ * CHALLENGE 6 - Rotte per la pagina profilo utente
+ * Queste rotte permettono agli utenti loggati di modificare
+ * nome, email e password del proprio profilo.
+ * Sono volutamente vulnerabili al Mass Assignment Attack
+ * per dimostrare l'importanza del fillable nel modello User.
+ */
+Route::middleware('auth')->group(function(){
+    Route::get('/profile/edit', [App\Http\Controllers\ProfileController::class, 'edit'])->name('profile.edit');
+    Route::put('/profile/update', [App\Http\Controllers\ProfileController::class, 'update'])->name('profile.update');
+});
+
 // Writer routes
 Route::middleware('writer')->group(function(){
     Route::get('/articles/create', [ArticleController::class, 'create'])->name('articles.create');
